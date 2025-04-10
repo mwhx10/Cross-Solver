@@ -1,0 +1,262 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rubik's Cube Cross Solver</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 1em;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    #output {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    .cube {
+      display: grid;
+      grid-template-columns: repeat(12, 30px);
+      grid-template-rows: repeat(9, 30px);
+      gap: 2px;
+      margin-top: 30px;
+    }
+    .sticker {
+      width: 30px;
+      height: 30px;
+      background-color: #ccc;
+      border: 1px solid #999;
+    }
+    .face {
+      display: grid;
+      grid-template-columns: repeat(3, 30px);
+      grid-template-rows: repeat(3, 30px);
+    }
+    .U  { grid-column: 4 / span 3; grid-row: 1 / span 3; }
+    .L  { grid-column: 1 / span 3; grid-row: 4 / span 3; }
+    .F  { grid-column: 4 / span 3; grid-row: 4 / span 3; }
+    .R  { grid-column: 7 / span 3; grid-row: 4 / span 3; }
+    .B  { grid-column: 10 / span 3; grid-row: 4 / span 3; }
+    .D  { grid-column: 4 / span 3; grid-row: 7 / span 3; }.white { background-color: white !important; }
+.green { background-color: palegreen !important; }
+.red   { background-color: #f76360 !important; }
+.blue  { background-color: lightskyblue !important; }
+.orange{ background-color: #f0ab67 !important; }
+.yellow{ background-color: #f0f27e !important; }
+
+  </style>
+</head>
+<body>  <h1>Rubik's Cube Cross Solver</h1>
+  <p>Scramble with <strong>white on top</strong> and <strong>green in front</strong>. This solver finds the solution for white cross.</p><label for="scramble">Scramble:</label> <input type="text" id="scramble" placeholder="e.g., RUR'U2 or R U R' U2">
+
+<button onclick="solveCross()">Solve Cross</button> <button onclick="resetScramble()">Reset</button> <button onclick="generateScramble()">Random Scramble</button>
+
+  <div id="output"></div>
+  <div class="cube" id="cube"></div>  <script>
+    const MOVE_TABLES = {
+      "U": {"UF":"UL","UL":"UB","UB":"UR","UR":"UF","FU":"LU","LU":"BU","BU":"RU","RU":"FU"},
+      "U'":{"UF":"UR","UR":"UB","UB":"UL","UL":"UF","FU":"RU","RU":"BU","BU":"LU","LU":"FU"},
+      "U2":{"UF":"UB","UB":"UF","UL":"UR","UR":"UL","FU":"BU","BU":"FU","LU":"RU","RU":"LU"},
+      "D": {"DF":"DR","DR":"DB","DB":"DL","DL":"DF","FD":"RD","RD":"BD","BD":"LD","LD":"FD"},
+      "D'":{"DF":"DL","DL":"DB","DB":"DR","DR":"DF","FD":"LD","LD":"BD","BD":"RD","RD":"FD"},
+      "D2":{"DF":"DB","DB":"DF","DR":"DL","DL":"DR","FD":"BD","BD":"FD","RD":"LD","LD":"RD"},
+      "F": {"FU":"FR","FR":"FD","FD":"FL","FL":"FU","UF":"RF","RF":"DF","DF":"LF","LF":"UF"},
+      "F'":{"FU":"FL","FL":"FD","FD":"FR","FR":"FU","UF":"LF","LF":"DF","DF":"RF","RF":"UF"},
+      "F2":{"FU":"FD","FD":"FU","FR":"FL","FL":"FR","UF":"DF","DF":"UF","RF":"LF","LF":"RF"},
+      "B": {"BU":"BL","BL":"BD","BD":"BR","BR":"BU","UB":"LB","LB":"DB","DB":"RB","RB":"UB"},
+      "B'":{"BU":"BR","BR":"BD","BD":"BL","BL":"BU","UB":"RB","RB":"DB","DB":"LB","LB":"UB"},
+      "B2":{"BU":"BD","BD":"BU","BR":"BL","BL":"BR","UB":"DB","DB":"UB","RB":"LB","LB":"RB"},
+      "R": {"RU":"RB","RB":"RD","RD":"RF","RF":"RU","UR":"BR","BR":"DR","DR":"FR","FR":"UR"},
+      "R'":{"RU":"RF","RF":"RD","RD":"RB","RB":"RU","UR":"FR","FR":"DR","DR":"BR","BR":"UR"},
+      "R2":{"RU":"RD","RD":"RU","RF":"RB","RB":"RF","UR":"DR","DR":"UR","FR":"BR","BR":"FR"},
+      "L": {"LU":"LF","LF":"LD","LD":"LB","LB":"LU","UL":"FL","FL":"DL","DL":"BL","BL":"UL"},
+      "L'":{"LU":"LB","LB":"LD","LD":"LF","LF":"LU","UL":"BL","BL":"DL","DL":"FL","FL":"UL"},
+      "L2":{"LU":"LD","LD":"LU","LF":"LB","LB":"LF","UL":"DL","DL":"UL","FL":"BL","BL":"FL"}
+    };
+
+    const MOVES = Object.keys(MOVE_TABLES);
+    const GOAL_STATE = { w: "UF", x: "UL", y: "UB", z: "UR" };
+
+    const crossColor = { w: 'green', x: 'orange', y: 'blue', z: 'red' };
+    const crossPieces = { w: 'UF', x: 'UL', y: 'UB', z: 'UR' };
+
+    function applyMove(state, move) {
+      const perm = MOVE_TABLES[move];
+      let newState = {};
+      for (let key in state) {
+        newState[key] = perm[state[key]] || state[key];
+      }
+      return newState;
+    }
+
+    function applyScramble(state, scramble) {
+      const moves = scramble.replace(/\s+/g, '').match(/([URFDLB]2?'?)/g) || [];
+      for (const move of moves) {
+        if (!(move in MOVE_TABLES)) throw Error("Invalid move: " + move);
+        state = applyMove(state, move);
+      }
+      return state;
+    }
+
+    function heuristic(state) {
+      let h = 0;
+      for (let k in GOAL_STATE) {
+        if (state[k] !== GOAL_STATE[k]) h++;
+      }
+      return h;
+    }
+
+    function solveIDA(startState, maxDepth = 8) {
+      function dfs(state, depth, prevMove, path) {
+        if (depth === 0) {
+          if (heuristic(state) === 0) return path.slice();
+          return null;
+        }
+        for (const move of MOVES) {
+          if (prevMove && move[0] === prevMove[0]) continue;
+          const next = applyMove(state, move);
+          path.push(move);
+          const result = dfs(next, depth - 1, move, path);
+          if (result) return result;
+          path.pop();
+        }
+        return null;
+      }
+      for (let depth = 1; depth <= maxDepth; depth++) {
+        const result = dfs(startState, depth, null, []);
+        if (result) return result;
+      }
+      return null;
+    }
+
+    function updateCubeNet(state) {
+      const faceStickers = document.querySelectorAll('.sticker');
+      faceStickers.forEach(div => div.className = 'sticker');
+      const centers = {
+        U5: 'white', D5: 'yellow', F5: 'green', B5: 'blue', R5: 'red', L5: 'orange'
+      };
+      for (let id in centers) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add(centers[id]);
+      }
+      const edgeFacelets = {
+        UF: ['U8', 'F2'], FU: ['F2', 'U8'], UL: ['U4', 'L2'], LU: ['L2', 'U4'], UB: ['U2', 'B2'], BU: ['B2', 'U2'], UR: ['U6', 'R2'], RU: ['R2', 'U6'],
+        DF: ['D2', 'F8'], FD: ['F8', 'D2'], DL: ['D4', 'L8'], LD: ['L8', 'D4'], DB: ['D8', 'B8'], BD: ['B8', 'D8'], DR: ['D6', 'R8'], RD: ['R8', 'D6'],
+        FR: ['F6', 'R4'], RF: ['R4', 'F6'], FL: ['F4', 'L6'], LF: ['L6', 'F4'], BR: ['B4', 'R6'], RB: ['R6', 'B4'], BL: ['B6', 'L4'], LB: ['L4', 'B6']
+      };
+      for (let label in state) {
+        const pos = state[label];
+        const facelets = edgeFacelets[pos];
+        if (!facelets) continue;
+        const [f1, f2] = facelets;
+        const face1 = f1[0];
+        const face2 = f2[0];
+        if (face1 === 'U' || face1 === 'D') {
+          document.getElementById(f1)?.classList.add('white');
+          document.getElementById(f2)?.classList.add(crossColor[label]);
+        } else if (face2 === 'U' || face2 === 'D') {
+          document.getElementById(f2)?.classList.add('white');
+          document.getElementById(f1)?.classList.add(crossColor[label]);
+        } else {
+          document.getElementById(f1)?.classList.add('white');
+          document.getElementById(f2)?.classList.add(crossColor[label]);
+        }
+      }
+    }
+
+    function normalizeScramble(raw) {
+      const sequence = raw.replace(/\s+/g, '').match(/([URFDLB])('?|2)?/g);
+      if (!sequence) return '';
+      const optimized = [];
+      let i = 0;
+      while (i < sequence.length) {
+        let face = sequence[i][0];
+        let count = 0;
+        while (i < sequence.length && sequence[i][0] === face) {
+          const mod = sequence[i].slice(1);
+          if (mod === "'") count += 3;
+          else if (mod === "2") count += 2;
+          else count += 1;
+          i++;
+        }
+        count %= 4;
+        if (count === 1) optimized.push(face);
+        else if (count === 2) optimized.push(face + '2');
+        else if (count === 3) optimized.push(face + "'");
+      }
+      return optimized.join(' ');
+    }
+
+    function solveCross() {
+      const scrambleInputBox = document.getElementById("scramble");
+      let rawInput = scrambleInputBox.value.trim();
+      let normalized = normalizeScramble(rawInput);
+      scrambleInputBox.value = normalized;
+      if (!normalized.match(/^([URFDLB]2?'?)(\s([URFDLB]2?'?))*$/)) {
+        alert("Scramble invalid");
+        return;
+      }
+      const outputBox = document.getElementById("output");
+      const initialState = { ...crossPieces };
+      try {
+        const scrambledState = applyScramble(JSON.parse(JSON.stringify(initialState)), normalized);
+        updateCubeNet(scrambledState);
+        const solution = solveIDA(scrambledState, 8);
+        if (solution) {
+          const moveCount = solution.length;
+          outputBox.innerText = `Solution: ${solution.join(" ")} (${moveCount} move${moveCount !== 1 ? "s" : ""})`;
+        } else {
+          outputBox.innerText = "No solution found within 8 moves.";
+        }
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    function resetScramble() {
+  document.getElementById("scramble").value = '';
+  document.getElementById("output").innerText = '';
+  const initialState = { ...crossPieces };
+  updateCubeNet(initialState);
+}
+
+    function generateScramble() {
+      const faces = ['U','D','F','B','R','L'];
+      const modifiers = ['', "'", '2'];
+      let scramble = [];
+      let last = '';
+      while (scramble.length < 20) {
+        let f = faces[Math.floor(Math.random() * 6)];
+        if (f === last) continue;
+        last = f;
+        let m = modifiers[Math.floor(Math.random() * 3)];
+        scramble.push(f + m);
+      }
+      document.getElementById("scramble").value = scramble.join(" ");
+    }
+
+    const cube = document.getElementById("cube");
+    ['U', 'L', 'F', 'R', 'B', 'D'].forEach(face => {
+      const faceDiv = document.createElement('div');
+      faceDiv.className = `face ${face}`;
+      for (let i = 1; i <= 9; i++) {
+        const sticker = document.createElement('div');
+        sticker.className = 'sticker';
+        sticker.id = face + i;
+        faceDiv.appendChild(sticker);
+      }
+      cube.appendChild(faceDiv);
+    });
+  </script></body>
+</html>
